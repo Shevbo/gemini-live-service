@@ -9,4 +9,3 @@ dist/
 .venv/
 venv/
 node_modules/
-prisma/migrations/
