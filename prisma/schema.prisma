@@ -1,0 +1,79 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider             = "prisma-client-py"
+  interface            = "asyncio"
+  recursive_type_depth = 5
+}
+
+model Session {
+  id               String       @id
+  userId           String       @map("user_id")
+  createdAt        DateTime     @default(now()) @map("created_at")
+  endedAt          DateTime?    @map("ended_at")
+  status           String       @default("active")
+  voice            String       @default("Kore")
+  language         String       @default("ru-RU")
+  source           String       @default("web")
+  turnCount        Int          @default(0) @map("turn_count")
+  summary          String?
+  audioStoragePath String?      @map("audio_storage_path")
+  turns            Turn[]
+  diaryEntries     DiaryEntry[]
+  expenses         Expense[]
+
+  @@map("sessions")
+}
+
+model Turn {
+  id              Int      @id @default(autoincrement())
+  sessionId       String   @map("session_id")
+  sequence        Int
+  role            String
+  text            String?
+  audioFilePath   String?  @map("audio_file_path")
+  audioDurationMs Int?     @map("audio_duration_ms")
+  createdAt       DateTime @default(now()) @map("created_at")
+  session         Session  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId])
+  @@index([createdAt])
+  @@map("turns")
+}
+
+model DiaryEntry {
+  id              Int      @id @default(autoincrement())
+  userId          String   @map("user_id")
+  entryDate       DateTime @map("entry_date") @db.Date
+  mood            Int?
+  summary         String?
+  keyEvents       Json     @default("[]") @map("key_events")
+  insights        Json     @default("[]")
+  actionItems     Json     @default("[]") @map("action_items")
+  sourceSessionId String?  @map("source_session_id")
+  createdAt       DateTime @default(now()) @map("created_at")
+  session         Session? @relation(fields: [sourceSessionId], references: [id])
+
+  @@index([userId, entryDate])
+  @@map("diary_entries")
+}
+
+model Expense {
+  id              Int      @id @default(autoincrement())
+  userId          String   @map("user_id")
+  expenseDate     DateTime @map("expense_date") @db.Date
+  amount          Float
+  currency        String   @default("RUB")
+  category        String
+  description     String?
+  sourceSessionId String?  @map("source_session_id")
+  createdAt       DateTime @default(now()) @map("created_at")
+  session         Session? @relation(fields: [sourceSessionId], references: [id])
+
+  @@index([userId, expenseDate])
+  @@index([userId, category])
+  @@map("expenses")
+}

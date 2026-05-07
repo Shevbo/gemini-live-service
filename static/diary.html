@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Дневник и расходы</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: system-ui, sans-serif; background: #f5f0eb; color: #333; }
+    header { background: #fff; padding: 14px 20px; display: flex; align-items: center; gap: 12px; border-bottom: 1px solid #e0d9d0; }
+    header a { color: #7a5c5c; text-decoration: none; }
+    header h1 { font-size: 1.1rem; color: #7a5c5c; }
+    #content { padding: 16px; max-width: 700px; margin: 0 auto; }
+    h2 { font-size: 1rem; color: #7a5c5c; margin: 20px 0 10px; }
+    .card { background: #fff; border-radius: 12px; padding: 16px; box-shadow: 0 1px 4px rgba(0,0,0,.07); margin-bottom: 12px; }
+    .card-date { font-size: 0.8rem; color: #999; margin-bottom: 8px; }
+    .mood { display: inline-block; background: #f0e8e8; border-radius: 8px; padding: 2px 8px; font-size: 0.85rem; margin-bottom: 6px; }
+    .card ul { padding-left: 18px; color: #555; font-size: 0.9rem; line-height: 1.7; }
+    .expense { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid #f0ebe5; }
+    .expense:last-child { border-bottom: none; }
+    .expense-cat { font-size: 0.8rem; background: #eee; border-radius: 6px; padding: 2px 7px; color: #666; }
+    .expense-amount { font-weight: 600; color: #555; }
+    .totals { background: #fff8f5; border-radius: 10px; padding: 12px 16px; margin-bottom: 16px; }
+    .totals table { width: 100%; font-size: 0.9rem; }
+    .totals td { padding: 3px 0; }
+    .totals td:last-child { text-align: right; font-weight: 600; }
+  </style>
+</head>
+<body>
+  <header>
+    <a href="/">← Назад</a>
+    <h1>Дневник и расходы</h1>
+  </header>
+  <div id="content"><p style="text-align:center;color:#999;padding:40px">Загрузка...</p></div>
+  <script type="module">
+    import { apiGet, getToken, saveToken } from '/js/api.js';
+    if (!getToken()) { const t = prompt('Токен:'); if (t) saveToken(t); }
+
+    async function load() {
+      const [diaryData, expData] = await Promise.all([
+        apiGet('/v1/diary/entries?per_page=30'),
+        apiGet('/v1/diary/expenses?per_page=100'),
+      ]);
+
+      const content = document.getElementById('content');
+      let html = '';
+
+      // Суммы по категориям
+      if (expData.totals && Object.keys(expData.totals).length) {
+        html += '<h2>💰 Итого по категориям</h2><div class="totals"><table>';
+        for (const [cat, sum] of Object.entries(expData.totals)) {
+          html += `<tr><td>${cat}</td><td>${sum.toLocaleString('ru-RU')} ₽</td></tr>`;
+        }
+        html += '</table></div>';
+      }
+
+      // Записи дневника
+      html += '<h2>📋 Дневник</h2>';
+      if (!diaryData.items.length) html += '<p style="color:#999">Записей пока нет</p>';
+      for (const e of diaryData.items) {
+        const date = new Date(e.created_at).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' });
+        html += `<div class="card">
+          <div class="card-date">${date}</div>
+          ${e.mood ? `<span class="mood">Настроение: ${e.mood}/10</span>` : ''}
+          <p style="margin: 8px 0; line-height:1.6">${e.summary || ''}</p>
+          ${e.key_events?.length ? `<ul>${e.key_events.map(ev => `<li>${ev}</li>`).join('')}</ul>` : ''}
+        </div>`;
+      }
+
+      // Расходы
+      html += '<h2>💳 Расходы</h2>';
+      if (!expData.items.length) html += '<p style="color:#999">Расходов не зафиксировано</p>';
+      else {
+        html += '<div class="card">';
+        for (const exp of expData.items) {
+          const date = new Date(exp.expense_date).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' });
+          html += `<div class="expense">
+            <div>
+              <span class="expense-cat">${exp.category}</span>
+              <span style="margin-left:8px;font-size:.9rem">${exp.description || ''}</span>
+              <span style="font-size:.75rem;color:#bbb;margin-left:6px">${date}</span>
+            </div>
+            <div class="expense-amount">${exp.amount.toLocaleString('ru-RU')} ${exp.currency}</div>
+          </div>`;
+        }
+        html += '</div>';
+      }
+
+      content.innerHTML = html;
+    }
+
+    load().catch(e => { document.getElementById('content').textContent = 'Ошибка: ' + e.message; });
+  </script>
+</body>
+</html>

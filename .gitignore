@@ -1,0 +1,12 @@
+.env
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+audio_storage/
+*.egg-info/
+dist/
+.venv/
+venv/
+node_modules/
+prisma/migrations/

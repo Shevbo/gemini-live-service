@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>История диалогов</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: system-ui, sans-serif; background: #f5f0eb; color: #333; }
+    header { background: #fff; padding: 14px 20px; display: flex; align-items: center; gap: 12px; border-bottom: 1px solid #e0d9d0; }
+    header a { color: #7a5c5c; text-decoration: none; }
+    header h1 { font-size: 1.1rem; color: #7a5c5c; }
+    #list { padding: 16px; display: flex; flex-direction: column; gap: 12px; max-width: 700px; margin: 0 auto; }
+    .card { background: #fff; border-radius: 12px; padding: 16px; box-shadow: 0 1px 4px rgba(0,0,0,.07); }
+    .card-date { font-size: 0.8rem; color: #999; margin-bottom: 6px; }
+    .card-summary { color: #444; line-height: 1.5; margin-bottom: 10px; }
+    .card-meta { font-size: 0.8rem; color: #aaa; }
+    .card-link { color: #9b7b7b; text-decoration: none; font-size: 0.85rem; }
+    #loading { text-align: center; color: #999; padding: 40px; }
+  </style>
+</head>
+<body>
+  <header>
+    <a href="/">← Назад</a>
+    <h1>История диалогов</h1>
+  </header>
+  <div id="list"><div id="loading">Загрузка...</div></div>
+  <script type="module">
+    import { apiGet, getToken, saveToken } from '/js/api.js';
+    if (!getToken()) { const t = prompt('Токен:'); if (t) saveToken(t); }
+
+    async function load() {
+      const data = await apiGet('/v1/dialogs?per_page=50');
+      const list = document.getElementById('list');
+      list.innerHTML = '';
+      if (!data.items.length) { list.innerHTML = '<p style="text-align:center;color:#999;padding:40px">Диалогов пока нет</p>'; return; }
+      for (const s of data.items) {
+        const date = new Date(s.created_at).toLocaleString('ru-RU');
+        const div = document.createElement('div');
+        div.className = 'card';
+        div.innerHTML = `
+          <div class="card-date">${date}</div>
+          <div class="card-summary">${s.summary || '(без резюме)'}</div>
+          <div class="card-meta">${s.turn_count} реплик · ${s.source} · ${s.status}</div>
+        `;
+        list.appendChild(div);
+      }
+    }
+    load().catch(e => { document.getElementById('list').textContent = 'Ошибка: ' + e.message; });
+  </script>
+</body>
+</html>
