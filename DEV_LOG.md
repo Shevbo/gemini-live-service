@@ -59,6 +59,10 @@ static/js/app.js        — основная логика
 scripts/add-to-portal.js — добавление карточки на Shectory Portal
 ```
 
+### Git
+- Локальный коммит: `6b1d8f2` (main)
+- Нужно: создать GitHub repo `Shevbo/gemini-live-service` и сделать `git remote add origin + push`
+
 ### Следующие шаги для агентов
 1. **Selfcoder** — проверить и дополнить `src/session/manager.py` (резюмпция сессий — самое сложное место)
 2. **QAper** — написать тесты для `audio.py` (WAV-заголовок), `store.py` (Redis TTL)
@@ -73,3 +77,28 @@ scripts/add-to-portal.js — добавление карточки на Shectory
 - Нужны права для создания БД PostgreSQL (`CREATE DATABASE gemini_live`)
 
 ---
+
+---
+
+## 2026-05-08 06:15 UTC — Claude Code (VDS arbitr)
+
+### Сделано
+- [x] БД `gemini_live` создана на PostgreSQL :5432, юзер `gemini_live_app`
+- [x] `.env` заполнен (Gemini API key, proxy, токены Бориса/Марии/Даниэлы)
+- [x] Redis запущен в Docker (127.0.0.1:6379)
+- [x] Prisma миграция применена — таблицы созданы
+- [x] SSL сертификат Let's Encrypt для voice.shectory.ru
+- [x] nginx HTTPS настроен с WebSocket поддержкой
+- [x] Приложение запущено: `nohup uvicorn src.main:app --host 127.0.0.1 --port 8080`
+- [x] Проверка: https://voice.shectory.ru/ отдаёт страницу Медсестры
+
+### Токены пользователей (хранить в безопасном месте)
+Борис:   5769cab495bacaf18f77138515ccea2edf0185d9521ffc11
+Мария:   7cebb8cd9924a03fc659d3dcb118785b0a7a63d33c2afc77
+Даниэла: 17be8ee521c348d755092fbc196bf19a6e2db47c1ed23982
+
+### Следующие шаги
+- [ ] Добавить в PM2 чтобы приложение выживало перезагрузку сервера
+- [ ] Протестировать голосовой диалог (требует GEMINI_API_KEY + прокси)
+- [ ] Добавить карточку на Shectory Portal
+- [ ] QAper — написать тесты
