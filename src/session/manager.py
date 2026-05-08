@@ -169,7 +169,9 @@ class GeminiSessionManager:
 
     async def send_audio_chunk(self, pcm_16khz: bytes) -> None:
         """Отправляет PCM-чанк от браузера (16kHz) в Gemini Live."""
-        await self._session.send_realtime_input(audio=pcm_16khz)
+        await self._session.send_realtime_input(
+            audio=genai_types.Blob(data=pcm_16khz, mime_type="audio/pcm;rate=16000")
+        )
 
     async def close(self) -> None:
         try:
