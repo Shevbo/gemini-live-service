@@ -15,12 +15,17 @@
     .msg-user { background: #e8f4fd; align-self: flex-end; border-bottom-right-radius: 4px; }
     .msg-model { background: #fff; align-self: flex-start; border-bottom-left-radius: 4px; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
     .msg b { display: block; font-size: 0.8rem; color: #888; margin-bottom: 4px; }
+    #status { font-size: 0.8rem; color: #999; padding: 4px 16px; text-align: center; background: #f5f0eb; min-height: 22px; }
     #input-area { background: #fff; border-top: 1px solid #e0d9d0; padding: 12px 16px; display: flex; gap: 10px; align-items: flex-end; }
     #text-input { flex: 1; border: 1px solid #ddd; border-radius: 20px; padding: 10px 16px; font-size: 1rem; resize: none; max-height: 120px; outline: none; }
     #text-input:focus { border-color: #9b7b7b; }
     #btn-text-send { background: #9b7b7b; color: #fff; border: none; border-radius: 50%; width: 44px; height: 44px; font-size: 1.2rem; cursor: pointer; flex-shrink: 0; }
     #btn-text-send:hover { background: #7a5c5c; }
-    #status { font-size: 0.8rem; color: #999; padding: 4px 16px; text-align: center; background: #f5f0eb; }
+    #btn-mic { background: #eee; color: #555; border: none; border-radius: 50%; width: 44px; height: 44px; font-size: 1.3rem; cursor: pointer; flex-shrink: 0; transition: background .2s; }
+    #btn-mic:hover { background: #ddd; }
+    #btn-mic.recording { background: #e53935; color: #fff; animation: pulse 1s infinite; }
+    #btn-mic.connecting { background: #fb8c00; color: #fff; }
+    @keyframes pulse { 0%,100%{transform:scale(1)} 50%{transform:scale(1.08)} }
   </style>
 </head>
 <body>
@@ -39,10 +44,11 @@
     </div>
   </div>
 
-  <div id="status">Готово</div>
+  <div id="status"></div>
 
   <div id="input-area">
-    <textarea id="text-input" rows="1" placeholder="Напишите сообщение..."></textarea>
+    <button id="btn-mic" title="Голосовой режим (нажмите чтобы говорить)">🎤</button>
+    <textarea id="text-input" rows="1" placeholder="Или напишите сообщение..."></textarea>
     <button id="btn-text-send">↑</button>
   </div>
 

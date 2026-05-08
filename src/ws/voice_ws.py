@@ -80,7 +80,7 @@ async def handle_voice_ws(websocket: WebSocket) -> None:
 
             elif msg_type == "text":
                 # Текстовое сообщение → стримим ответ обратно
-                async for chunk in manager.send_text(msg["text"]):
+                async for chunk in manager.send_text(msg["text"], db):
                     if chunk["type"] == "audio_chunk":
                         await websocket.send_json({
                             "type": "audio",
