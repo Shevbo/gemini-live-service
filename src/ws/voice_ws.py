@@ -5,13 +5,12 @@ WebSocket эндпоинт для двустороннего голосовог�
   Клиент → сервер:
     {"type": "start", "token": "<bearer>", "voice": "Kore", "language": "ru-RU"}
     {"type": "audio", "data": "<base64 PCM 16kHz>"}
-    {"type": "text", "text": "<сообщение>"}
     {"type": "stop"}
 
   Сервер → клиент:
     {"type": "session_ready", "session_id": "..."}
-    {"type": "audio", "data": "<base64 PCM 24kHz>", "transcript_partial": "..."}
-    {"type": "turn_complete", "transcript": "...", "duration_ms": 0}
+    {"type": "audio", "data": "<base64 PCM 24kHz>"}
+    {"type": "turn_complete", "transcript": "..."}
     {"type": "error", "message": "..."}
 """
 
@@ -34,7 +33,6 @@ async def handle_voice_ws(websocket: WebSocket) -> None:
 
     manager: GeminiSessionManager | None = None
     db: Prisma | None = None
-    audio_buffer: list[bytes] = []
 
     try:
         # Первое сообщение — авторизация и старт сессии
@@ -66,41 +64,63 @@ async def handle_voice_ws(websocket: WebSocket) -> None:
         await websocket.send_json({"type": "session_ready", "session_id": session_id})
         logger.info("ws_session_started", session_id=session_id, user=user.id)
 
-        # Основной цикл
-        while True:
-            raw = await websocket.receive_text()
-            msg = json.loads(raw)
-            msg_type = msg.get("type")
+        stop_event = asyncio.Event()
 
-            if msg_type == "audio":
-                # PCM 16kHz от браузера → в Gemini Live
-                pcm = base64.b64decode(msg["data"])
-                audio_buffer.append(pcm)
-                await manager.send_audio_chunk(pcm)
+        # Задача 1: браузер → Gemini (аудио от микрофона)
+        async def browser_to_gemini() -> None:
+            while not stop_event.is_set():
+                try:
+                    raw = await asyncio.wait_for(websocket.receive_text(), timeout=0.5)
+                except asyncio.TimeoutError:
+                    continue
+                except WebSocketDisconnect:
+                    break
 
-            elif msg_type == "text":
-                # Текстовое сообщение → стримим ответ обратно
-                async for chunk in manager.send_text(msg["text"], db):
-                    if chunk["type"] == "audio_chunk":
-                        await websocket.send_json({
-                            "type": "audio",
-                            "data": base64.b64encode(chunk["audio"]).decode(),
-                            "transcript_partial": chunk.get("transcript_partial", ""),
-                        })
-                    elif chunk["type"] == "turn_complete":
-                        await websocket.send_json({
-                            "type": "turn_complete",
-                            "transcript": chunk.get("transcript", ""),
-                            "duration_ms": chunk.get("duration_ms", 0),
-                        })
+                msg = json.loads(raw)
+                if msg.get("type") == "audio":
+                    pcm = base64.b64decode(msg["data"])
+                    await manager.send_audio_chunk(pcm)
+                elif msg.get("type") == "stop":
+                    break
 
-            elif msg_type == "stop":
-                break
+            stop_event.set()
 
+        # Задача 2: Gemini → браузер (аудио-ответы)
+        async def gemini_to_browser() -> None:
+            async for chunk in manager.receive_responses():
+                if stop_event.is_set():
+                    break
+                if chunk["type"] == "audio_chunk":
+                    await websocket.send_json({
+                        "type": "audio",
+                        "data": base64.b64encode(chunk["audio"]).decode(),
+                    })
+                elif chunk["type"] == "turn_complete":
+                    await websocket.send_json({
+                        "type": "turn_complete",
+                        "transcript": chunk.get("transcript", ""),
+                    })
+
+        t1 = asyncio.create_task(browser_to_gemini())
+        t2 = asyncio.create_task(gemini_to_browser())
+
+        # Ждём пока одна из задач завершится
+        done, pending = await asyncio.wait([t1, t2], return_when=asyncio.FIRST_COMPLETED)
+        stop_event.set()
+        for t in pending:
+            t.cancel()
+            try:
+                await t
+            except (asyncio.CancelledError, Exception):
+                pass
+
+    except asyncio.TimeoutError:
+        try:
+            await websocket.send_json({"type": "error", "message": "Timeout waiting for start"})
+        except Exception:
+            pass
     except WebSocketDisconnect:
         logger.info("ws_disconnected")
-    except asyncio.TimeoutError:
-        await websocket.send_json({"type": "error", "message": "Timeout waiting for start"})
     except Exception as e:
         logger.error("ws_error", error=str(e))
         try:

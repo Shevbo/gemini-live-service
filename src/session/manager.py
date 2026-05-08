@@ -173,6 +173,23 @@ class GeminiSessionManager:
             audio=genai_types.Blob(data=pcm_16khz, mime_type="audio/pcm;rate=16000")
         )
 
+    async def receive_responses(self) -> AsyncGenerator[dict, None]:
+        """Читает ответы Gemini (аудио + turn_complete) для голосового WS режима."""
+        full_transcript = ""
+        async for message in self._session.receive():
+            if not message.server_content:
+                continue
+            model_turn = message.server_content.model_turn
+            if model_turn and model_turn.parts:
+                for part in model_turn.parts:
+                    if part.text:
+                        full_transcript += part.text
+                    if part.inline_data and part.inline_data.data:
+                        yield {"type": "audio_chunk", "audio": part.inline_data.data}
+            if message.server_content.turn_complete:
+                yield {"type": "turn_complete", "transcript": full_transcript}
+                full_transcript = ""
+
     async def close(self) -> None:
         try:
             await self._exit_stack.aclose()
