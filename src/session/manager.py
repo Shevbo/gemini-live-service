@@ -10,6 +10,7 @@ GeminiSessionManager — ядро сервиса.
 import asyncio
 import uuid
 from collections.abc import AsyncGenerator
+from contextlib import AsyncExitStack
 from typing import Any
 
 import structlog
@@ -23,7 +24,7 @@ from src.session.store import StoredSession, session_store
 
 logger = structlog.get_logger()
 
-MODEL_ID = "gemini-live-2.5-flash-native-audio"
+MODEL_ID = "gemini-2.5-flash-native-audio-latest"
 NURSE_SYSTEM_PROMPT = """Ты — Медсестра, заботливый и внимательный психологический ассистент.
 Твоя задача — поддерживать пользователя, вести доверительные беседы, помогать с эмоциональными вопросами.
 Говори на русском языке мягко, спокойно и с теплотой.
@@ -33,10 +34,7 @@ NURSE_SYSTEM_PROMPT = """Ты — Медсестра, заботливый и в
 def _make_config(system_prompt: str, voice: str, language: str) -> genai_types.LiveConnectConfig:
     return genai_types.LiveConnectConfig(
         response_modalities=["AUDIO"],
-        system_instruction=genai_types.Content(
-            role="user",
-            parts=[genai_types.Part(text=system_prompt)],
-        ),
+        system_instruction=system_prompt,
         speech_config=genai_types.SpeechConfig(
             voice_config=genai_types.VoiceConfig(
                 prebuilt_voice_config=genai_types.PrebuiltVoiceConfig(voice_name=voice)
@@ -58,33 +56,33 @@ def _format_history_as_context(turns: list[Any]) -> str:
 
 
 class GeminiSessionManager:
-    def __init__(self, session_id: str, stored: StoredSession, db: Prisma) -> None:
+    def __init__(self, session_id: str, stored: StoredSession) -> None:
         self.session_id = session_id
         self.stored = stored
-        self.db = db
         self._client = genai.Client(api_key=settings.gemini_api_key)
         self._session: Any = None
+        self._exit_stack = AsyncExitStack()
         self._sequence = 0
 
-    async def connect(self) -> None:
+    async def connect(self, db: Prisma) -> None:
         config = _make_config(self.stored.system_prompt, self.stored.voice, self.stored.language)
 
         # Пытаемся возобновить через handle (FIX 2: session resumption)
         if self.stored.gemini_handle:
             try:
-                self._session = await self._client.aio.live.connect(
-                    model=MODEL_ID,
-                    config=config,
-                    # resume_token пока в beta — обернуто в try/except
+                self._session = await self._exit_stack.enter_async_context(
+                    self._client.aio.live.connect(model=MODEL_ID, config=config)
                 )
                 logger.info("session_resumed", session_id=self.session_id)
                 return
             except Exception as e:
                 logger.warning("session_resume_failed", error=str(e), session_id=self.session_id)
+                await self._exit_stack.aclose()
+                self._exit_stack = AsyncExitStack()
 
         # Новая сессия — инжектируем историю как часть system_prompt (FIX 3: не replay)
-        last_turns = await self.db.turn.find_many(
-            where={"session_id": self.session_id},
+        last_turns = await db.turn.find_many(
+            where={"sessionId": self.session_id},
             order={"sequence": "asc"},
             take=30,
         )
@@ -93,18 +91,20 @@ class GeminiSessionManager:
             augmented_prompt = self.stored.system_prompt + "\n\n" + history_ctx
             config = _make_config(augmented_prompt, self.stored.voice, self.stored.language)
 
-        self._session = await self._client.aio.live.connect(model=MODEL_ID, config=config)
+        self._session = await self._exit_stack.enter_async_context(
+            self._client.aio.live.connect(model=MODEL_ID, config=config)
+        )
         logger.info("session_connected", session_id=self.session_id)
 
-    async def send_text(self, text: str) -> AsyncGenerator[dict, None]:
+    async def send_text(self, text: str, db: Prisma) -> AsyncGenerator[dict, None]:
         """Отправляет текст, стримит аудио-ответ, сохраняет обе реплики в БД."""
         self._sequence += 1
         seq = self._sequence
 
         # Сохраняем реплику пользователя немедленно (FIX 4: real-time persistence)
-        await self.db.turn.create(
+        await db.turn.create(
             data={
-                "session_id": self.session_id,
+                "sessionId": self.session_id,
                 "sequence": seq,
                 "role": "user",
                 "text": text,
@@ -140,19 +140,19 @@ class GeminiSessionManager:
 
             if message.server_content.turn_complete:
                 wav_path, duration_ms = save_turn_audio(self.session_id, seq, "model", audio_chunks)
-                await self.db.turn.create(
+                await db.turn.create(
                     data={
-                        "session_id": self.session_id,
+                        "sessionId": self.session_id,
                         "sequence": seq,
                         "role": "model",
                         "text": full_transcript or None,
-                        "audio_file_path": wav_path or None,
-                        "audio_duration_ms": duration_ms or None,
+                        "audioFilePath": wav_path or None,
+                        "audioDurationMs": duration_ms or None,
                     }
                 )
-                await self.db.session.update(
+                await db.session.update(
                     where={"id": self.session_id},
-                    data={"turn_count": {"increment": 1}},
+                    data={"turnCount": {"increment": 1}},
                 )
                 # Сохраняем handle если доступен
                 handle = getattr(self._session, "resume_token", None)
@@ -172,11 +172,10 @@ class GeminiSessionManager:
         await self._session.send_realtime_input(audio=pcm_16khz)
 
     async def close(self) -> None:
-        if self._session:
-            try:
-                await self._session.close()
-            except Exception:
-                pass
+        try:
+            await self._exit_stack.aclose()
+        except Exception:
+            pass
 
 
 async def create_session(
@@ -192,11 +191,11 @@ async def create_session(
     await db.session.create(
         data={
             "id": session_id,
-            "user_id": user_id,
+            "userId": user_id,
             "voice": voice,
             "language": language,
             "source": source,
-            "audio_storage_path": str(settings.audio_storage_path + "/" + session_id),
+            "audioStoragePath": str(settings.audio_storage_path + "/" + session_id),
         }
     )
 
@@ -211,7 +210,7 @@ async def create_session(
     )
     await session_store.save(stored)
 
-    manager = GeminiSessionManager(session_id=session_id, stored=stored, db=db)
-    await manager.connect()
+    manager = GeminiSessionManager(session_id=session_id, stored=stored)
+    await manager.connect(db)
 
     return manager, session_id

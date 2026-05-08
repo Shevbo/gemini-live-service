@@ -47,7 +47,7 @@ ANALYSIS_PROMPT = """Ты — ассистент по анализу терап�
 async def analyze_session(session_id: str, user_id: str, db: Prisma) -> None:
     try:
         turns = await db.turn.find_many(
-            where={"session_id": session_id},
+            where={"sessionId": session_id},
             order={"sequence": "asc"},
         )
         if not turns:
@@ -85,27 +85,27 @@ async def analyze_session(session_id: str, user_id: str, db: Prisma) -> None:
 
         diary_entry = await db.diaryentry.create(
             data={
-                "user_id": user_id,
-                "entry_date": today,
+                "userId": user_id,
+                "entryDate": today,
                 "mood": diary.get("mood"),
                 "summary": diary.get("summary"),
-                "key_events": diary.get("key_events", []),
+                "keyEvents": diary.get("key_events", []),
                 "insights": diary.get("insights", []),
-                "action_items": diary.get("action_items", []),
-                "source_session_id": session_id,
+                "actionItems": diary.get("action_items", []),
+                "sourceSessionId": session_id,
             }
         )
 
         for exp in expenses:
             await db.expense.create(
                 data={
-                    "user_id": user_id,
-                    "expense_date": exp.get("date") or today,
+                    "userId": user_id,
+                    "expenseDate": exp.get("date") or today,
                     "amount": float(exp["amount"]),
                     "currency": exp.get("currency", "RUB"),
                     "category": exp.get("category", "другое"),
                     "description": exp.get("description"),
-                    "source_session_id": session_id,
+                    "sourceSessionId": session_id,
                 }
             )
 

@@ -15,7 +15,7 @@ async def list_dialogs(
     user: User = Depends(get_current_user),
     db: Prisma = Depends(get_db),
 ) -> dict:
-    where: dict = {"user_id": user.id}
+    where: dict = {"userId": user.id}
     if status:
         where["status"] = status
 
@@ -24,7 +24,7 @@ async def list_dialogs(
         where=where,
         skip=(page - 1) * per_page,
         take=per_page,
-        order={"created_at": "desc"},
+        order={"createdAt": "desc"},
     )
 
     items = [
@@ -51,7 +51,7 @@ async def get_dialog(
     db: Prisma = Depends(get_db),
 ) -> dict:
     session = await db.session.find_first(
-        where={"id": session_id, "user_id": user.id},
+        where={"id": session_id, "userId": user.id},
         include={"turns": True},
     )
     if not session:
@@ -91,7 +91,7 @@ async def delete_dialog(
     user: User = Depends(get_current_user),
     db: Prisma = Depends(get_db),
 ) -> dict:
-    session = await db.session.find_first(where={"id": session_id, "user_id": user.id})
+    session = await db.session.find_first(where={"id": session_id, "userId": user.id})
     if not session:
         raise HTTPException(status_code=404, detail="Dialog not found")
 

@@ -70,7 +70,7 @@ async def send_text(
     import base64
 
     async def event_stream():
-        async for chunk in manager.send_text(req.text):
+        async for chunk in manager.send_text(req.text, db):
             if chunk["type"] == "audio_chunk":
                 payload = {
                     "type": "audio_chunk",
@@ -104,7 +104,7 @@ async def stop_session(
 
     await db.session.update(
         where={"id": session_id},
-        data={"status": "completed", "ended_at": __import__("datetime").datetime.utcnow()},
+        data={"status": "completed", "endedAt": __import__("datetime").datetime.utcnow()},
     )
     await session_store.delete(session_id)
 

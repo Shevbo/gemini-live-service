@@ -18,18 +18,18 @@ async def list_entries(
     user: User = Depends(get_current_user),
     db: Prisma = Depends(get_db),
 ) -> dict:
-    where: dict = {"user_id": user.id}
+    where: dict = {"userId": user.id}
     if date_from:
-        where.setdefault("entry_date", {})["gte"] = date_from.isoformat()
+        where.setdefault("entryDate", {})["gte"] = date_from.isoformat()
     if date_to:
-        where.setdefault("entry_date", {})["lte"] = date_to.isoformat()
+        where.setdefault("entryDate", {})["lte"] = date_to.isoformat()
 
     total = await db.diaryentry.count(where=where)
     entries = await db.diaryentry.find_many(
         where=where,
         skip=(page - 1) * per_page,
         take=per_page,
-        order={"entry_date": "desc"},
+        order={"entryDate": "desc"},
     )
 
     return {
@@ -58,7 +58,7 @@ async def delete_entry(
     user: User = Depends(get_current_user),
     db: Prisma = Depends(get_db),
 ) -> dict:
-    entry = await db.diaryentry.find_first(where={"id": entry_id, "user_id": user.id})
+    entry = await db.diaryentry.find_first(where={"id": entry_id, "userId": user.id})
     if not entry:
         raise HTTPException(status_code=404, detail="Entry not found")
     await db.diaryentry.delete(where={"id": entry_id})
@@ -75,11 +75,11 @@ async def list_expenses(
     user: User = Depends(get_current_user),
     db: Prisma = Depends(get_db),
 ) -> dict:
-    where: dict = {"user_id": user.id}
+    where: dict = {"userId": user.id}
     if date_from:
-        where.setdefault("expense_date", {})["gte"] = date_from.isoformat()
+        where.setdefault("expenseDate", {})["gte"] = date_from.isoformat()
     if date_to:
-        where.setdefault("expense_date", {})["lte"] = date_to.isoformat()
+        where.setdefault("expenseDate", {})["lte"] = date_to.isoformat()
     if category:
         where["category"] = category
 
@@ -88,12 +88,12 @@ async def list_expenses(
         where=where,
         skip=(page - 1) * per_page,
         take=per_page,
-        order={"expense_date": "desc"},
+        order={"expenseDate": "desc"},
     )
 
     # Суммы по категориям
-    all_for_totals = await db.expense.find_many(where={"user_id": user.id, **({
-        "expense_date": where["expense_date"]} if "expense_date" in where else {})})
+    all_for_totals = await db.expense.find_many(where={"userId": user.id, **({
+        "expenseDate": where["expenseDate"]} if "expenseDate" in where else {})})
     totals: dict[str, float] = {}
     for e in all_for_totals:
         totals[e.category] = totals.get(e.category, 0.0) + e.amount
