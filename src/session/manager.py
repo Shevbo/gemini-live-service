@@ -125,26 +125,35 @@ class GeminiSessionManager:
         )
 
         audio_chunks: list[bytes] = []
-        full_transcript = ""
+        output_transcript = ""   # from output_audio_transcription (actual speech)
+        text_parts = ""          # from model_turn.parts[].text (may be reasoning)
 
         async for message in self._session.receive():
             if not message.server_content:
                 continue
 
+            # Speech transcription (authoritative when output_audio_transcription enabled)
+            output_trans = getattr(message.server_content, "output_transcription", None)
+            if output_trans:
+                t = getattr(output_trans, "text", "") or ""
+                if t:
+                    output_transcript += t
+
             model_turn = message.server_content.model_turn
             if model_turn and model_turn.parts:
                 for part in model_turn.parts:
                     if part.text:
-                        full_transcript += part.text
+                        text_parts += part.text
                     if part.inline_data and part.inline_data.data:
                         audio_chunks.append(part.inline_data.data)
                         yield {
                             "type": "audio_chunk",
                             "audio": part.inline_data.data,
-                            "transcript_partial": full_transcript,
                         }
 
             if message.server_content.turn_complete:
+                # Use speech transcription if available, else fall back to text parts
+                full_transcript = output_transcript or text_parts
                 try:
                     wav_path, duration_ms = save_turn_audio(self.session_id, seq, "model", audio_chunks)
                 except Exception as e:
@@ -185,7 +194,8 @@ class GeminiSessionManager:
 
     async def receive_responses(self) -> AsyncGenerator[dict, None]:
         """Reads Gemini responses for voice WS mode. Yields input_transcript, audio_chunk, turn_complete."""
-        full_transcript = ""
+        output_transcript = ""   # from output_audio_transcription (actual speech)
+        text_parts = ""          # from model_turn.parts[].text (may be reasoning)
         audio_chunks: list[bytes] = []
 
         async for message in self._session.receive():
@@ -199,31 +209,34 @@ class GeminiSessionManager:
                 if text:
                     yield {"type": "input_transcript", "text": text}
 
-            # Model output transcription (requires output_audio_transcription in config)
+            # Model output transcription (authoritative speech text)
             output_trans = getattr(message.server_content, "output_transcription", None)
             if output_trans:
                 text = getattr(output_trans, "text", "") or ""
                 if text:
-                    full_transcript += text
+                    output_transcript += text
 
             model_turn = message.server_content.model_turn
             if model_turn and model_turn.parts:
                 for part in model_turn.parts:
                     if part.text:
-                        full_transcript += part.text
+                        text_parts += part.text
                     if part.inline_data and part.inline_data.data:
                         audio_chunks.append(part.inline_data.data)
                         yield {"type": "audio_chunk", "audio": part.inline_data.data}
 
             if message.server_content.turn_complete:
                 self._sequence += 1
+                # Use speech transcription if available, else fall back to text parts
+                transcript = output_transcript or text_parts
                 yield {
                     "type": "turn_complete",
                     "sequence": self._sequence,
-                    "transcript": full_transcript,
+                    "transcript": transcript,
                     "audio_chunks": audio_chunks,
                 }
-                full_transcript = ""
+                output_transcript = ""
+                text_parts = ""
                 audio_chunks = []
 
     async def close(self) -> None:
