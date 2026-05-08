@@ -136,7 +136,44 @@ PM2="/home/shectory/workspaces/Shectory Assist/node_modules/pm2/bin/pm2"
 - PM2: gemini-live-service — online, выживет рестарт
 
 ### Следующие шаги
-- [ ] DNS: добавить `voice    A    83.69.248.77` (Борис делает вручную)
-- [ ] E2E тест голосового диалога
+- [x] DNS: добавить `voice    A    83.69.248.77` — сделано Борисом
+- [x] E2E тест голосового диалога — работает!
 - [ ] Добавить карточку на Shectory Portal
 - [ ] QAper — тесты audio.py и store.py
+
+---
+
+## 2026-05-08 ~11:00 UTC — Claude Code (VDS arbitr)
+
+### E2E тест пройден
+
+Всего исправлено 7 runtime-ошибок, обнаруженных в ходе тестирования:
+
+1. **NO_PROXY** — Prisma engine ходил через Google-прокси, получал 502. Добавлен `NO_PROXY=localhost,127.0.0.1,::1`
+2. **Prisma camelCase** — все ключи в `where`/`data` переведены на camelCase (`userId`, `sessionId`, `audioFilePath` и т.д.)
+3. **AsyncExitStack** — Gemini `live.connect()` — это async context manager, не coroutine
+4. **Имя модели** — `gemini-live-2.5-flash-native-audio` не существует → `gemini-2.5-flash-native-audio-latest`
+5. **system_instruction** — передавать строкой, не `genai_types.Content`
+6. **Stale DB connection** — `db` передаётся per-request в `send_text(text, db)`, не хранится в менеджере
+7. **AUDIO_STORAGE_PATH** — был Docker-путь `/app/audio_storage` → `<project_dir>/audio_storage`
+
+### Результат E2E теста
+
+```
+POST /v1/session/start → {"session_id":"sess_2813846970ab","status":"created"}
+POST /v1/session/sess_2813846970ab/send {"text":"Привет, как ты?"}
+  → SSE stream: audio_chunks (43KB base64) + turn_complete
+  → DB: user turn + model turn сохранены
+  → WAV: audio_storage/sess_2813846970ab/001_model.wav (143KB, RIFF 16-bit 24000Hz)
+```
+
+### Текущее состояние
+- https://voice.shectory.ru/ — **полностью работает**
+- Голосовой диалог через REST: `/v1/session/start` → `/v1/session/{id}/send` → SSE audio
+- Все данные персистентны: PostgreSQL + Redis + WAV файлы
+- PM2 + systemd: выживает рестарт сервера
+
+### Следующие шаги
+- [ ] Протестировать WebSocket endpoint (voice_ws.py) — для реального голосового UI
+- [ ] Добавить карточку на Shectory Portal
+- [ ] QAper — тесты
