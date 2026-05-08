@@ -30,13 +30,13 @@ async def list_dialogs(
     items = [
         {
             "id": s.id,
-            "created_at": s.created_at.isoformat(),
-            "ended_at": s.ended_at.isoformat() if s.ended_at else None,
+            "created_at": s.createdAt.isoformat(),
+            "ended_at": s.endedAt.isoformat() if s.endedAt else None,
             "status": s.status,
             "source": s.source,
-            "turn_count": s.turn_count,
+            "turn_count": s.turnCount,
             "summary": s.summary,
-            "has_audio": bool(s.audio_storage_path),
+            "has_audio": bool(s.audioStoragePath),
         }
         for s in sessions
     ]
@@ -62,11 +62,11 @@ async def get_dialog(
             "sequence": t.sequence,
             "role": t.role,
             "text": t.text,
-            "audio_url": f"/v1/session/{session_id}/audio/{t.audio_file_path.split('/')[-1]}"
-            if t.audio_file_path
+            "audio_url": f"/v1/session/{session_id}/audio/{t.audioFilePath.split('/')[-1]}"
+            if t.audioFilePath
             else None,
-            "audio_duration_ms": t.audio_duration_ms,
-            "created_at": t.created_at.isoformat(),
+            "audio_duration_ms": t.audioDurationMs,
+            "created_at": t.createdAt.isoformat(),
         }
         for t in (session.turns or [])
     ]
@@ -74,11 +74,11 @@ async def get_dialog(
     return {
         "session": {
             "id": session.id,
-            "created_at": session.created_at.isoformat(),
-            "ended_at": session.ended_at.isoformat() if session.ended_at else None,
+            "created_at": session.createdAt.isoformat(),
+            "ended_at": session.endedAt.isoformat() if session.endedAt else None,
             "status": session.status,
             "voice": session.voice,
-            "turn_count": session.turn_count,
+            "turn_count": session.turnCount,
             "summary": session.summary,
         },
         "turns": turns,

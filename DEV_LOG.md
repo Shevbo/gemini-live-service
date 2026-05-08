@@ -174,6 +174,41 @@ POST /v1/session/sess_2813846970ab/send {"text":"Привет, как ты?"}
 - PM2 + systemd: выживает рестарт сервера
 
 ### Следующие шаги
-- [ ] Протестировать WebSocket endpoint (voice_ws.py) — для реального голосового UI
+- [x] Протестировать WebSocket endpoint (voice_ws.py) — построен, UI работает
 - [ ] Добавить карточку на Shectory Portal
 - [ ] QAper — тесты
+
+---
+
+## 2026-05-08 ~14:00 UTC — Claude Code (VDS arbitr)
+
+### Исправлены баги QAper (Bug #1–5)
+
+**Bug #1 + #2 — `dialogs.py`: Prisma snake_case → camelCase**
+- `s.created_at` → `s.createdAt`, `s.ended_at` → `s.endedAt`
+- `s.turn_count` → `s.turnCount`, `s.audio_storage_path` → `s.audioStoragePath`
+- `t.audio_file_path` → `t.audioFilePath`, `t.audio_duration_ms` → `t.audioDurationMs`
+- `t.created_at` → `t.createdAt`, `session.created_at` → `session.createdAt`
+- `session.ended_at` → `session.endedAt`, `session.turn_count` → `session.turnCount`
+
+**Bug #3 — `diary.py`: Prisma snake_case → camelCase**
+- `e.entry_date` → `e.entryDate`, `e.key_events` → `e.keyEvents`
+- `e.action_items` → `e.actionItems`, `e.source_session_id` → `e.sourceSessionId`
+- `e.created_at` → `e.createdAt`, `e.expense_date` → `e.expenseDate`, `e.source_session_id` → `e.sourceSessionId`
+
+**Bug #4 — `manager.py`: WAV save защищён try/except**
+- `save_turn_audio` обёрнут в try/except — `turnCount` инкрементируется даже при ошибке записи аудио
+
+**Bug #5 — `analyzer.py`: stdlib logger → structlog**
+- `import logging; logger = logging.getLogger(...)` → `import structlog; logger = structlog.get_logger()`
+
+### Текущее состояние
+- https://voice.shectory.ru/ — полностью работает
+- REST API: `/v1/session/*`, `/v1/dialogs/*`, `/v1/diary/*` — исправлены
+- WebSocket voice UI: `/ws/voice` — работает (bidirectional PCM)
+- PM2 перезапущен, startup чистый (нет ошибок импорта)
+
+### Следующие шаги
+- [ ] E2E тест `/v1/dialogs/` и `/v1/diary/entries` (проверить camelCase фиксы)
+- [ ] Добавить карточку на Shectory Portal
+- [ ] QAper — unit тесты audio.py и store.py

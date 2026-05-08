@@ -5,16 +5,16 @@
 
 import asyncio
 import json
-import logging
 
 import httpx
+import structlog
 from google import genai
 from google.genai import types as genai_types
 from prisma import Prisma
 
 from src.config import settings
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger()
 
 ANALYSIS_PROMPT = """Ты — ассистент по анализу терапевтических диалогов.
 Прочитай транскрипцию разговора пользователя с психологическим ассистентом «Медсестра»

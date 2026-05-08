@@ -139,7 +139,11 @@ class GeminiSessionManager:
                         }
 
             if message.server_content.turn_complete:
-                wav_path, duration_ms = save_turn_audio(self.session_id, seq, "model", audio_chunks)
+                try:
+                    wav_path, duration_ms = save_turn_audio(self.session_id, seq, "model", audio_chunks)
+                except Exception as e:
+                    logger.warning("audio_save_failed", error=str(e), session_id=self.session_id)
+                    wav_path, duration_ms = None, None
                 await db.turn.create(
                     data={
                         "sessionId": self.session_id,

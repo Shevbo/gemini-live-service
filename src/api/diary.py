@@ -38,14 +38,14 @@ async def list_entries(
         "items": [
             {
                 "id": e.id,
-                "entry_date": e.entry_date.date().isoformat(),
+                "entry_date": e.entryDate.date().isoformat(),
                 "mood": e.mood,
                 "summary": e.summary,
-                "key_events": e.key_events,
+                "key_events": e.keyEvents,
                 "insights": e.insights,
-                "action_items": e.action_items,
-                "source_session_id": e.source_session_id,
-                "created_at": e.created_at.isoformat(),
+                "action_items": e.actionItems,
+                "source_session_id": e.sourceSessionId,
+                "created_at": e.createdAt.isoformat(),
             }
             for e in entries
         ],
@@ -105,12 +105,12 @@ async def list_expenses(
         "items": [
             {
                 "id": e.id,
-                "expense_date": e.expense_date.date().isoformat(),
+                "expense_date": e.expenseDate.date().isoformat(),
                 "amount": e.amount,
                 "currency": e.currency,
                 "category": e.category,
                 "description": e.description,
-                "source_session_id": e.source_session_id,
+                "source_session_id": e.sourceSessionId,
             }
             for e in expenses
         ],
