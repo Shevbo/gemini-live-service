@@ -98,7 +98,45 @@ scripts/add-to-portal.js — добавление карточки на Shectory
 Даниэла: 17be8ee521c348d755092fbc196bf19a6e2db47c1ed23982
 
 ### Следующие шаги
-- [ ] Добавить в PM2 чтобы приложение выживало перезагрузку сервера
+- [x] Добавить в PM2 чтобы приложение выживало перезагрузку сервера
 - [ ] Протестировать голосовой диалог (требует GEMINI_API_KEY + прокси)
 - [ ] Добавить карточку на Shectory Portal
 - [ ] QAper — написать тесты
+
+---
+
+## 2026-05-08 ~06:30 UTC — Claude Code (VDS arbitr)
+
+### PM2 настроен
+
+- [x] `ecosystem.config.js` создан в `/home/shectory/workspaces/gemini-live-service/`
+- [x] Старый nohup-процесс (PID 388801) остановлен
+- [x] Приложение запущено через PM2 (ID 0, online, 108 MB)
+- [x] `pm2 save` — список процессов сохранён в `/home/shectory/.pm2/dump.pm2`
+- [x] `pm2 startup systemd` — создан `/etc/systemd/system/pm2-shectory.service` (enabled)
+- [x] После перезагрузки сервера PM2 автоматически подымет gemini-live-service
+
+**Логи приложения:**
+- stdout: `/home/shectory/logs/gemini-live-out.log`
+- stderr: `/home/shectory/logs/gemini-live-error.log`
+
+**Полезные команды:**
+```bash
+PM2="/home/shectory/workspaces/Shectory Assist/node_modules/pm2/bin/pm2"
+"$PM2" list                          # статус
+"$PM2" logs gemini-live-service      # хвост логов
+"$PM2" restart gemini-live-service   # рестарт
+"$PM2" stop gemini-live-service      # стоп
+```
+
+### Текущее состояние
+- Приложение: https://voice.shectory.ru/ — работает
+- БД: gemini_live @ PostgreSQL:5432 — таблицы созданы
+- Redis: 127.0.0.1:6379 в Docker — работает
+- PM2: gemini-live-service — online, выживет рестарт
+
+### Следующие шаги
+- [ ] DNS: добавить `voice    A    83.69.248.77` (Борис делает вручную)
+- [ ] E2E тест голосового диалога
+- [ ] Добавить карточку на Shectory Portal
+- [ ] QAper — тесты audio.py и store.py
