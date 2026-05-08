@@ -32,16 +32,22 @@ NURSE_SYSTEM_PROMPT = """Ты — Медсестра, заботливый и в
 
 
 def _make_config(system_prompt: str, voice: str, language: str) -> genai_types.LiveConnectConfig:
-    return genai_types.LiveConnectConfig(
-        response_modalities=["AUDIO"],
-        system_instruction=system_prompt,
-        speech_config=genai_types.SpeechConfig(
+    config_kwargs: dict = {
+        "response_modalities": ["AUDIO"],
+        "system_instruction": system_prompt,
+        "speech_config": genai_types.SpeechConfig(
             voice_config=genai_types.VoiceConfig(
                 prebuilt_voice_config=genai_types.PrebuiltVoiceConfig(voice_name=voice)
             ),
             language_code=language,
         ),
-    )
+    }
+    try:
+        config_kwargs["input_audio_transcription"] = genai_types.AudioTranscriptionConfig()
+        config_kwargs["output_audio_transcription"] = genai_types.AudioTranscriptionConfig()
+    except AttributeError:
+        pass
+    return genai_types.LiveConnectConfig(**config_kwargs)
 
 
 def _format_history_as_context(turns: list[Any]) -> str:
@@ -178,21 +184,47 @@ class GeminiSessionManager:
         )
 
     async def receive_responses(self) -> AsyncGenerator[dict, None]:
-        """Читает ответы Gemini (аудио + turn_complete) для голосового WS режима."""
+        """Reads Gemini responses for voice WS mode. Yields input_transcript, audio_chunk, turn_complete."""
         full_transcript = ""
+        audio_chunks: list[bytes] = []
+
         async for message in self._session.receive():
             if not message.server_content:
                 continue
+
+            # User speech transcription (requires input_audio_transcription in config)
+            input_trans = getattr(message.server_content, "input_transcription", None)
+            if input_trans:
+                text = getattr(input_trans, "text", "") or ""
+                if text:
+                    yield {"type": "input_transcript", "text": text}
+
+            # Model output transcription (requires output_audio_transcription in config)
+            output_trans = getattr(message.server_content, "output_transcription", None)
+            if output_trans:
+                text = getattr(output_trans, "text", "") or ""
+                if text:
+                    full_transcript += text
+
             model_turn = message.server_content.model_turn
             if model_turn and model_turn.parts:
                 for part in model_turn.parts:
                     if part.text:
                         full_transcript += part.text
                     if part.inline_data and part.inline_data.data:
+                        audio_chunks.append(part.inline_data.data)
                         yield {"type": "audio_chunk", "audio": part.inline_data.data}
+
             if message.server_content.turn_complete:
-                yield {"type": "turn_complete", "transcript": full_transcript}
+                self._sequence += 1
+                yield {
+                    "type": "turn_complete",
+                    "sequence": self._sequence,
+                    "transcript": full_transcript,
+                    "audio_chunks": audio_chunks,
+                }
                 full_transcript = ""
+                audio_chunks = []
 
     async def close(self) -> None:
         try:

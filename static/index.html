@@ -26,12 +26,21 @@
     #btn-mic.recording { background: #e53935; color: #fff; animation: pulse 1s infinite; }
     #btn-mic.connecting { background: #fb8c00; color: #fff; }
     @keyframes pulse { 0%,100%{transform:scale(1)} 50%{transform:scale(1.08)} }
+    #voice-select { border: 1px solid #ddd; border-radius: 8px; padding: 4px 8px; font-size: 0.85rem; color: #555; background: #fff; cursor: pointer; }
   </style>
 </head>
 <body>
   <header>
     <h1>🩺 Медсестра</h1>
     <nav>
+      <select id="voice-select" title="Голос">
+        <option value="Kore">Kore</option>
+        <option value="Aoede">Aoede</option>
+        <option value="Charon">Charon</option>
+        <option value="Fenrir">Fenrir</option>
+        <option value="Puck">Puck</option>
+        <option value="Zephyr">Zephyr</option>
+      </select>
       <a href="/history.html">История</a>
       <a href="/diary.html">Дневник</a>
     </nav>

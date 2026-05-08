@@ -11,12 +11,28 @@
     header a { color: #7a5c5c; text-decoration: none; }
     header h1 { font-size: 1.1rem; color: #7a5c5c; }
     #list { padding: 16px; display: flex; flex-direction: column; gap: 12px; max-width: 700px; margin: 0 auto; }
-    .card { background: #fff; border-radius: 12px; padding: 16px; box-shadow: 0 1px 4px rgba(0,0,0,.07); }
+
+    .card { background: #fff; border-radius: 12px; box-shadow: 0 1px 4px rgba(0,0,0,.07); overflow: hidden; }
+    .card-header { padding: 16px; cursor: pointer; user-select: none; }
+    .card-header:hover { background: #faf7f5; }
     .card-date { font-size: 0.8rem; color: #999; margin-bottom: 6px; }
     .card-summary { color: #444; line-height: 1.5; margin-bottom: 10px; }
-    .card-meta { font-size: 0.8rem; color: #aaa; }
-    .card-link { color: #9b7b7b; text-decoration: none; font-size: 0.85rem; }
-    #loading { text-align: center; color: #999; padding: 40px; }
+    .card-meta { font-size: 0.8rem; color: #aaa; display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
+    .expand-btn { margin-left: auto; color: #9b7b7b; font-size: 0.8rem; white-space: nowrap; }
+
+    .card-turns { border-top: 1px solid #f0e8e0; padding: 12px 16px; display: flex; flex-direction: column; gap: 10px; }
+    .card-turns.hidden { display: none; }
+
+    .turn { border-radius: 10px; padding: 10px 14px; max-width: 88%; }
+    .turn-user { background: #e8f4fd; align-self: flex-end; }
+    .turn-model { background: #faf7f5; border: 1px solid #ece5dc; align-self: flex-start; }
+    .turn-role { font-size: 0.75rem; color: #999; margin-bottom: 4px; font-weight: 600; }
+    .turn-text { line-height: 1.55; color: #333; white-space: pre-wrap; word-break: break-word; }
+    .turn-text.empty { color: #bbb; font-style: italic; }
+    .turn-audio { margin-top: 8px; }
+    .turn-audio audio { width: 100%; max-width: 340px; height: 34px; }
+
+    .loading-turns { padding: 12px 16px; color: #999; font-size: 0.85rem; }
   </style>
 </head>
 <body>
@@ -24,29 +40,124 @@
     <a href="/">← Назад</a>
     <h1>История диалогов</h1>
   </header>
-  <div id="list"><div id="loading">Загрузка...</div></div>
+  <div id="list"><div style="text-align:center;color:#999;padding:40px">Загрузка...</div></div>
+
   <script type="module">
     import { apiGet, getToken, saveToken } from '/js/api.js';
     if (!getToken()) { const t = prompt('Токен:'); if (t) saveToken(t); }
+
+    async function loadTurns(sessionId, container) {
+      container.innerHTML = '<div class="loading-turns">Загрузка...</div>';
+      try {
+        const data = await apiGet(`/v1/dialogs/${sessionId}`);
+        const turns = data.turns || [];
+        container.innerHTML = '';
+
+        if (!turns.length) {
+          container.innerHTML = '<div class="loading-turns">Реплик нет</div>';
+          return;
+        }
+
+        for (const t of turns) {
+          const isUser = t.role === 'user';
+          const div = document.createElement('div');
+          div.className = `turn turn-${t.role}`;
+
+          const roleEl = document.createElement('div');
+          roleEl.className = 'turn-role';
+          roleEl.textContent = isUser ? 'Вы' : 'Медсестра';
+          div.appendChild(roleEl);
+
+          const textEl = document.createElement('div');
+          textEl.className = 'turn-text' + (t.text ? '' : ' empty');
+          textEl.textContent = t.text || '(нет транскрипции)';
+          div.appendChild(textEl);
+
+          if (t.audio_url) {
+            const audioWrap = document.createElement('div');
+            audioWrap.className = 'turn-audio';
+            const audio = document.createElement('audio');
+            audio.controls = true;
+            audio.preload = 'none';
+            audio.src = t.audio_url;
+            if (t.audio_duration_ms) {
+              const sec = (t.audio_duration_ms / 1000).toFixed(1);
+              audio.title = `${sec}с`;
+            }
+            audioWrap.appendChild(audio);
+            div.appendChild(audioWrap);
+          }
+
+          container.appendChild(div);
+        }
+      } catch (e) {
+        container.innerHTML = `<div class="loading-turns" style="color:#c33">Ошибка: ${e.message}</div>`;
+      }
+    }
 
     async function load() {
       const data = await apiGet('/v1/dialogs?per_page=50');
       const list = document.getElementById('list');
       list.innerHTML = '';
-      if (!data.items.length) { list.innerHTML = '<p style="text-align:center;color:#999;padding:40px">Диалогов пока нет</p>'; return; }
+
+      if (!data.items.length) {
+        list.innerHTML = '<p style="text-align:center;color:#999;padding:40px">Диалогов пока нет</p>';
+        return;
+      }
+
       for (const s of data.items) {
         const date = new Date(s.created_at).toLocaleString('ru-RU');
-        const div = document.createElement('div');
-        div.className = 'card';
-        div.innerHTML = `
+
+        const card = document.createElement('div');
+        card.className = 'card';
+
+        const header = document.createElement('div');
+        header.className = 'card-header';
+        header.innerHTML = `
           <div class="card-date">${date}</div>
-          <div class="card-summary">${s.summary || '(без резюме)'}</div>
-          <div class="card-meta">${s.turn_count} реплик · ${s.source} · ${s.status}</div>
+          <div class="card-summary">${s.summary ? escHtml(s.summary) : '<span style="color:#bbb">без резюме</span>'}</div>
+          <div class="card-meta">
+            <span>${s.turn_count} реплик</span>
+            <span>${s.source}</span>
+            <span>${s.status}</span>
+            ${s.has_audio ? '<span>🔊 аудио</span>' : ''}
+            <span class="expand-btn">▼ Показать</span>
+          </div>
         `;
-        list.appendChild(div);
+
+        const turns = document.createElement('div');
+        turns.className = 'card-turns hidden';
+
+        card.appendChild(header);
+        card.appendChild(turns);
+
+        let expanded = false;
+        let loaded = false;
+
+        header.onclick = async () => {
+          expanded = !expanded;
+          const btn = header.querySelector('.expand-btn');
+          if (expanded) {
+            turns.classList.remove('hidden');
+            btn.textContent = '▲ Скрыть';
+            if (!loaded) { loaded = true; await loadTurns(s.id, turns); }
+          } else {
+            turns.classList.add('hidden');
+            btn.textContent = '▼ Показать';
+          }
+        };
+
+        list.appendChild(card);
       }
     }
-    load().catch(e => { document.getElementById('list').textContent = 'Ошибка: ' + e.message; });
+
+    function escHtml(s) {
+      return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    }
+
+    load().catch(e => {
+      document.getElementById('list').textContent = 'Ошибка: ' + e.message;
+    });
   </script>
 </body>
 </html>

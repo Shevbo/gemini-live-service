@@ -1,12 +1,16 @@
-// MediaRecorder для захвата голоса + AudioContext для воспроизведения PCM
+// MediaRecorder for mic capture + AudioContext for seamless PCM playback
+
+const SILENCE_THRESHOLD = 0.008;
+const SILENCE_FRAMES = 10; // 10 * 2048 / 16000 ≈ 1.3s of silence
 
 export class MicRecorder {
-  constructor(onChunk) {
+  constructor(onChunk, onActivity) {
     this.onChunk = onChunk;
+    this.onActivity = onActivity; // called when non-silent audio detected
     this.stream = null;
-    this.recorder = null;
     this.audioCtx = null;
     this.processor = null;
+    this._silenceCount = 0;
   }
 
   async start() {
@@ -15,15 +19,27 @@ export class MicRecorder {
       sampleRate: 16000,
       echoCancellation: true,
       noiseSuppression: true,
+      autoGainControl: false,
     }});
 
     this.audioCtx = new AudioContext({ sampleRate: 16000 });
     const source = this.audioCtx.createMediaStreamSource(this.stream);
-    this.processor = this.audioCtx.createScriptProcessor(4096, 1, 1);
+    this.processor = this.audioCtx.createScriptProcessor(2048, 1, 1);
 
     this.processor.onaudioprocess = (e) => {
       const f32 = e.inputBuffer.getChannelData(0);
-      // Float32 → Int16 PCM
+
+      let sum = 0;
+      for (let i = 0; i < f32.length; i++) sum += f32[i] * f32[i];
+      const rms = Math.sqrt(sum / f32.length);
+
+      if (rms >= SILENCE_THRESHOLD) {
+        this._silenceCount = 0;
+        this.onActivity?.();
+      } else {
+        this._silenceCount++;
+      }
+
       const i16 = new Int16Array(f32.length);
       for (let i = 0; i < f32.length; i++) {
         i16[i] = Math.max(-32768, Math.min(32767, f32[i] * 32768));
@@ -45,8 +61,8 @@ export class MicRecorder {
 export class PCMPlayer {
   constructor() {
     this.audioCtx = new AudioContext({ sampleRate: 24000 });
-    this.queue = [];
-    this.playing = false;
+    this.nextTime = 0;
+    this._lastSrc = null;
   }
 
   feed(pcmBase64) {
@@ -59,18 +75,36 @@ export class PCMPlayer {
 
     const buf = this.audioCtx.createBuffer(1, f32.length, 24000);
     buf.copyToChannel(f32, 0);
-    this.queue.push(buf);
-    if (!this.playing) this._play();
-  }
 
-  _play() {
-    if (!this.queue.length) { this.playing = false; return; }
-    this.playing = true;
-    const buf = this.queue.shift();
     const src = this.audioCtx.createBufferSource();
     src.buffer = buf;
     src.connect(this.audioCtx.destination);
-    src.onended = () => this._play();
-    src.start();
+
+    // Schedule immediately after previous chunk — eliminates gaps
+    const startAt = Math.max(this.audioCtx.currentTime, this.nextTime);
+    src.start(startAt);
+    this.nextTime = startAt + buf.duration;
+    this._lastSrc = src;
+  }
+
+  // Returns ms remaining until all scheduled audio finishes
+  remainingMs() {
+    const remaining = this.nextTime - this.audioCtx.currentTime;
+    return Math.max(0, remaining * 1000);
+  }
+
+  // Call after last chunk of a turn is fed; fires callback when audio is done
+  onTurnEnd(callback) {
+    const ms = this.remainingMs();
+    if (ms <= 50) {
+      callback();
+    } else {
+      setTimeout(callback, ms);
+    }
+  }
+
+  reset() {
+    this.nextTime = 0;
+    this._lastSrc = null;
   }
 }

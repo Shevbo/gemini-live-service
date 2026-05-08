@@ -1,14 +1,15 @@
 """
-WebSocket эндпоинт для двустороннего голосового диалога с браузера.
+WebSocket endpoint for bidirectional voice dialog with browser.
 
-Протокол:
-  Клиент → сервер:
+Protocol:
+  Client → server:
     {"type": "start", "token": "<bearer>", "voice": "Kore", "language": "ru-RU"}
     {"type": "audio", "data": "<base64 PCM 16kHz>"}
     {"type": "stop"}
 
-  Сервер → клиент:
+  Server → client:
     {"type": "session_ready", "session_id": "..."}
+    {"type": "thinking", "user_text": "..."} — Gemini heard user, preparing response
     {"type": "audio", "data": "<base64 PCM 24kHz>"}
     {"type": "turn_complete", "transcript": "..."}
     {"type": "error", "message": "..."}
@@ -23,6 +24,7 @@ from fastapi import WebSocket, WebSocketDisconnect
 from prisma import Prisma
 
 from src.auth import get_user_from_token
+from src.session.audio import save_turn_audio
 from src.session.manager import GeminiSessionManager, create_session
 
 logger = structlog.get_logger()
@@ -35,7 +37,6 @@ async def handle_voice_ws(websocket: WebSocket) -> None:
     db: Prisma | None = None
 
     try:
-        # Первое сообщение — авторизация и старт сессии
         raw = await asyncio.wait_for(websocket.receive_text(), timeout=10.0)
         init_msg = json.loads(raw)
 
@@ -66,7 +67,6 @@ async def handle_voice_ws(websocket: WebSocket) -> None:
 
         stop_event = asyncio.Event()
 
-        # Задача 1: браузер → Gemini (аудио от микрофона)
         async def browser_to_gemini() -> None:
             while not stop_event.is_set():
                 try:
@@ -85,26 +85,75 @@ async def handle_voice_ws(websocket: WebSocket) -> None:
 
             stop_event.set()
 
-        # Задача 2: Gemini → браузер (аудио-ответы)
         async def gemini_to_browser() -> None:
+            pending_user_text: str | None = None
+
             async for chunk in manager.receive_responses():
                 if stop_event.is_set():
                     break
-                if chunk["type"] == "audio_chunk":
+
+                if chunk["type"] == "input_transcript":
+                    pending_user_text = chunk["text"]
+                    await websocket.send_json({"type": "thinking", "user_text": pending_user_text})
+
+                elif chunk["type"] == "audio_chunk":
                     await websocket.send_json({
                         "type": "audio",
                         "data": base64.b64encode(chunk["audio"]).decode(),
                     })
+
                 elif chunk["type"] == "turn_complete":
+                    seq = chunk["sequence"]
+                    transcript = chunk.get("transcript", "")
+                    audio_chunks = chunk.get("audio_chunks", [])
+
+                    # Save user turn if we captured their speech
+                    if pending_user_text:
+                        try:
+                            await db.turn.create(data={
+                                "sessionId": session_id,
+                                "sequence": seq,
+                                "role": "user",
+                                "text": pending_user_text,
+                            })
+                        except Exception as e:
+                            logger.warning("user_turn_save_failed", error=str(e))
+                        pending_user_text = None
+
+                    # Save model turn with audio
+                    wav_path, duration_ms = None, None
+                    if audio_chunks:
+                        try:
+                            wav_path, duration_ms = save_turn_audio(
+                                session_id, seq, "model", audio_chunks
+                            )
+                        except Exception as e:
+                            logger.warning("audio_save_failed", error=str(e))
+
+                    try:
+                        await db.turn.create(data={
+                            "sessionId": session_id,
+                            "sequence": seq,
+                            "role": "model",
+                            "text": transcript or None,
+                            "audioFilePath": wav_path,
+                            "audioDurationMs": duration_ms,
+                        })
+                        await db.session.update(
+                            where={"id": session_id},
+                            data={"turnCount": {"increment": 1}},
+                        )
+                    except Exception as e:
+                        logger.warning("model_turn_save_failed", error=str(e))
+
                     await websocket.send_json({
                         "type": "turn_complete",
-                        "transcript": chunk.get("transcript", ""),
+                        "transcript": transcript,
                     })
 
         t1 = asyncio.create_task(browser_to_gemini())
         t2 = asyncio.create_task(gemini_to_browser())
 
-        # Ждём пока одна из задач завершится
         done, pending = await asyncio.wait([t1, t2], return_when=asyncio.FIRST_COMPLETED)
         stop_event.set()
         for t in pending:
